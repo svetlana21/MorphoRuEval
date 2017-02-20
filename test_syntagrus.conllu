@@ -1,9 +1,9 @@
-1	Ћторвавшись	отрыватьсЯ	VERB	_	Aspect=Perf|Tense=Past|VerbForm=Trans|Voice=Act	6	advcl	_	_
-2	от	от	ADP	_	_	3	case	_	_
-3	бумаг	бумага	NOUN	_	Animacy=Inan|Case=Gen|Gender=Fem|Number=Plur	1	nmod	_	_
+1	РћС‚РѕСЂРІР°РІС€РёСЃСЊ	РѕС‚СЂС‹РІР°С‚СЊСЃСЏ	VERB	_	Aspect=Perf|Tense=Past|VerbForm=Trans|Voice=Act	6	advcl	_	_
+2	РѕС‚	РѕС‚	ADP	_	_	3	case	_	_
+3	Р±СѓРјР°Рі	Р±СѓРјР°РіР°	NOUN	_	Animacy=Inan|Case=Gen|Gender=Fem|Number=Plur	1	nmod	_	_
 4	,	,	PUNCT	,	_	3	punct	_	_
-5	он	он	PRON	_	Case=Nom|Gender=Masc|Number=Sing|Person=3	6	nsubj	_	_
-6	взглЯнул	взглЯдывать	VERB	_	Aspect=Perf|Gender=Masc|Mood=Ind|Number=Sing|Tense=Past|VerbForm=Fin|Voice=Act	0	root	_	_
-7	на	на	ADP	_	_	8	case	_	_
-8	…фимову	ефимова	PROPN	_	Animacy=Anim|Case=Acc|Gender=Fem|Number=Sing	6	nmod	_	_
+5	РѕРЅ	РѕРЅ	PRON	_	Case=Nom|Gender=Masc|Number=Sing|Person=3	6	nsubj	_	_
+6	РІР·РіР»СЏРЅСѓР»	РІР·РіР»СЏРґС‹РІР°С‚СЊ	VERB	_	Aspect=Perf|Gender=Masc|Mood=Ind|Number=Sing|Tense=Past|VerbForm=Fin|Voice=Act	0	root	_	_
+7	РЅР°	РЅР°	ADP	_	_	8	case	_	_
+8	Р•С„РёРјРѕРІСѓ	РµС„РёРјРѕРІР°	PROPN	_	Animacy=Anim|Case=Acc|Gender=Fem|Number=Sing	6	nmod	_	_
 9	.	.	PUNCT	.	_	6	punct	_	_
