@@ -111,6 +111,120 @@ class FeatureExtr():
             l_context_features.update(w3_features)
         return l_context_features, l_context
         
+# -*- coding: utf-8 -*-
+from conllu.parser import parse
+from nltk.util import ngrams
+import pprint as pp
+import re
+
+class FeatureExtr():
+    '''
+    Класс для извлечения признаков слов.
+    '''
+    def __init__(self, features = []):
+        self.features = features    
+
+    def download(self, filename):
+        '''
+        Загрузка файла в формате conllu и его парсинг.
+        '''
+        with open(filename) as f:
+            data = f.read()
+        result = parse(data)
+        #pp.pprint(result)
+        return result
+    
+    def all_words_features(self, word):
+        '''
+        Получение признаков, которые нужно извлечь для любого слова, вне зависимости от его положения в окне.
+        Это такие признаки, как:
+            1) токен в uppercase (или нет);
+            2) токен с большой буквы (или нет);
+            3) токен - это цифра (или нет);
+            4) первая и последняя буквы;
+            5) если длина слова > 1, то префиксы и суффиксы длины от 2 до 4 символов.
+        '''
+        word_features = [word.isupper(), word.istitle(), word.isdigit(), word[0], word[-1]]     # признаки 1-4
+        if len(word)>1:                                     # префиксы и суффиксы в зависимости от длины слова
+            word_features.extend([word[:2],word[-2:]])
+        if len(word)>2:
+            word_features.extend([word[:3],word[-3:]])
+        if len(word)>3:
+            word_features.extend([word[:4], word[-4:]])
+        return word_features
+
+    def make_right_context_features(self,sent,i):
+        '''
+        Функция, формирующая признаки правого контекста текущего токена. 
+        Это те признаки, которые извлекаются с помощью функции all_words_features.
+        Функция также формирует список слов в правом контексте. 
+        В дальнейшем это требуется для формирования списка всех слов окна, который передаётся в функцию ngrams.
+        '''
+        word1 = sent[i+1]['form']
+        word1_feat = self.all_words_features(word1)
+        r_context = [word1]
+        r_context_features = dict(zip(['+1:word_is_upper', '+1:word_is_title', '+1:word_is_digit',
+                                       '+1:pref[0]','+1:suf[-1]',
+                                        '+1:pref[:2]','+1:suf[-2:]','+1:pref[:3]','+1:suf[-3:]',
+                                        '+1:pref[:4]','+1:suf[-4:]'], word1_feat))
+        if i == len(sent)-3:
+            word2 = sent[i+2]['form']
+            word2_feat = (self.all_words_features(word2))            
+            r_context.append(word2)
+            w2_features = dict(zip(['+2:word_is_upper', '+2:word_is_title', '+2:word_is_digit',
+                                    '+2:pref[0]','+2:suf[-1]',
+                                '+2:pref[:2]','+2:suf[-2:]','+2:pref[:3]','+2:suf[-3:]',
+                                '+2:pref[:4]','+2:suf[-4:]'], word2_feat))
+            r_context_features.update(w2_features)
+        if i < len(sent)-3:
+            word2 = sent[i+2]['form']
+            word2_feat = (self.all_words_features(word2))            
+            word3 = sent[i+3]['form']
+            word3_feat = (self.all_words_features(word3))            
+            r_context.extend([word2,word3])
+            w2_features = dict(zip(['+2:word_is_upper', '+2:word_is_title', '+2:word_is_digit',
+                                    '+2:pref[0]','+2:suf[-1]',
+                                '+2:pref[:2]','+2:suf[-2:]','+2:pref[:3]','+2:suf[-3:]',
+                                '+2:pref[:4]','+2:suf[-4:]'], word2_feat))
+            w3_features = dict(zip(['+3:word_is_upper', '+3:word_is_title', '+3:word_is_digit',
+                                    '+3:pref[0]','+3:suf[-1]',
+                                '+3:pref[:2]','+3:suf[-2:]','+3:pref[:3]','+3:suf[-3:]',
+                                '+3:pref[:4]','+3:suf[-4:]'], word3_feat))
+            r_context_features.update(w2_features)
+            r_context_features.update(w3_features)
+        return r_context_features, r_context
+        
+    def make_left_context_features(self,sent,i):
+        '''
+        То же, что make_right_context_features, только для левого контекста.
+        '''
+        word1 = sent[i-1]['form']
+        word1_feat = self.all_words_features(word1)
+        l_context = [word1]
+        l_context_features = dict(zip(['-1:word_is_upper', '-1:word_is_title', '-1:word_is_digit','-1:pref[0]','-1:suf[-1]',
+                                '-1:pref[:2]','-1:suf[-2:]','-1:pref[:3]','-1:suf[-3:]','-1:pref[:4]','-1:suf[-4:]'], word1_feat))
+        if i == 2:
+            word2 = sent[i-2]['form']
+            word2_feat = self.all_words_features(word2)           
+            l_context.insert(0,word2)
+            w2_features = dict(zip(['-2:word_is_upper', '-2:word_is_title', '-2:word_is_digit','-2:pref[0]','-2:suf[-1]',
+                                '-2:pref[:2]','-2:suf[-2:]','-2:pref[:3]','-2:suf[-3:]','-2:pref[:4]','-2:suf[-4:]'], word2_feat))
+            l_context_features.update(w2_features)
+        if i > 2:
+            word2 = sent[i-2]['form']        
+            word2_feat = self.all_words_features(word2)      
+            word3 = sent[i-3]['form']
+            word3_feat = self.all_words_features(word3)           
+            l_context.insert(0, word2)
+            l_context.insert(0, word3)
+            w2_features = dict(zip(['-2:word_is_upper', '-2:word_is_title', '-2:word_is_digit','-2:pref[0]','-2:suf[-1]',
+                                '-2:pref[:2]','-2:suf[-2:]','-2:pref[:3]','-2:suf[-3:]','-2:pref[:4]','-2:suf[-4:]'], word2_feat))
+            w3_features = dict(zip(['-3:word_is_upper', '-3:word_is_title', '-3:word_is_digit','-3:pref[0]','-3:suf[-1]',
+                                '-3:pref[:2]','-3:suf[-2:]','-3:pref[:3]','-3:suf[-3:]','-3:pref[:4]','-3:suf[-4:]'], word3_feat))
+            l_context_features.update(w2_features)
+            l_context_features.update(w3_features)
+        return l_context_features, l_context
+        
     def ngrams(self, window):
         '''
         Признаки-биграммы и признаки-триграммы.
@@ -169,8 +283,36 @@ class FeatureExtr():
         ngrams = self.ngrams(window) 
         features.update(ngrams[0])
         features.update(ngrams[1])
-        pp.pprint(features)
         return features
+        
+    def sent2features(self, sent):
+        '''
+        Все признаки для одного предложения.
+        '''
+        return [self.word2features(sent, i) for i in range(len(sent))]
+
+    def sent2label(self, sent, category, pos = False):
+        '''
+        Классы для одного предложения.
+        На вход подаётся предложение и интересующая грамматическая категория
+        (если она является частью речи, то значение переменной pos = True).
+        Если слово соответствует переданной ГК, то метка класса 1, иначе - 0.
+        '''
+        sent_labels = []
+        for word in sent:
+            if pos == True:
+                label = word['upostag']
+            else:
+                pat = re.compile('(\w+)=(\w+)')
+                mat = pat.match(category)
+                categ = mat.group(1)
+                category = mat.group(2)
+                label = word['feats'][categ]
+            if label == category:
+                sent_labels.append(1)
+            else:
+                sent_labels.append(0)
+        return sent_labels
         
 if __name__ == '__main__':
     feat_extr = FeatureExtr()
