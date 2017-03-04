@@ -13,69 +13,43 @@ class TestFeatureExtr(unittest.TestCase):
                ('form', 'Оторвавшись'),
                ('lemma', 'отрываться'),
                ('upostag', 'VERB'),
-               ('xpostag', None),
                ('feats',
                 OrderedDict([('Aspect', 'Perf'),
                              ('Tense', 'Past'),
                              ('VerbForm', 'Trans'),
-                             ('Voice', 'Act')])),
-               ('head', 6),
-               ('deprel', 'advcl'),
-               ('deps', None),
-               ('misc', None)]),
+                             ('Voice', 'Act')]))]),
   OrderedDict([('id', 2),
                ('form', 'от'),
                ('lemma', 'от'),
                ('upostag', 'ADP'),
-               ('xpostag', None),
-               ('feats', None),
-               ('head', 3),
-               ('deprel', 'case'),
-               ('deps', None),
-               ('misc', None)]),
+               ('feats', None)]),
   OrderedDict([('id', 3),
                ('form', 'бумаг'),
                ('lemma', 'бумага'),
                ('upostag', 'NOUN'),
-               ('xpostag', None),
                ('feats',
                 OrderedDict([('Animacy', 'Inan'),
                              ('Case', 'Gen'),
                              ('Gender', 'Fem'),
-                             ('Number', 'Plur')])),
-               ('head', 1),
-               ('deprel', 'nmod'),
-               ('deps', None),
-               ('misc', None)]),
+                             ('Number', 'Plur')]))]),
   OrderedDict([('id', 4),
                ('form', ','),
                ('lemma', ','),
                ('upostag', 'PUNCT'),
-               ('xpostag', ','),
-               ('feats', None),
-               ('head', 3),
-               ('deprel', 'punct'),
-               ('deps', None),
-               ('misc', None)]),
+               ('feats', None)]),
   OrderedDict([('id', 5),
                ('form', 'он'),
                ('lemma', 'он'),
                ('upostag', 'PRON'),
-               ('xpostag', None),
                ('feats',
                 OrderedDict([('Case', 'Nom'),
                              ('Gender', 'Masc'),
                              ('Number', 'Sing'),
-                             ('Person', '3')])),
-               ('head', 6),
-               ('deprel', 'nsubj'),
-               ('deps', None),
-               ('misc', None)]),
+                             ('Person', '3')]))]),
   OrderedDict([('id', 6),
                ('form', 'взглянул'),
                ('lemma', 'взглядывать'),
                ('upostag', 'VERB'),
-               ('xpostag', None),
                ('feats',
                 OrderedDict([('Aspect', 'Perf'),
                              ('Gender', 'Masc'),
@@ -83,45 +57,26 @@ class TestFeatureExtr(unittest.TestCase):
                              ('Number', 'Sing'),
                              ('Tense', 'Past'),
                              ('VerbForm', 'Fin'),
-                             ('Voice', 'Act')])),
-               ('head', 0),
-               ('deprel', 'root'),
-               ('deps', None),
-               ('misc', None)]),
+                             ('Voice', 'Act')]))]),
   OrderedDict([('id', 7),
                ('form', 'на'),
                ('lemma', 'на'),
                ('upostag', 'ADP'),
-               ('xpostag', None),
-               ('feats', None),
-               ('head', 8),
-               ('deprel', 'case'),
-               ('deps', None),
-               ('misc', None)]),
+               ('feats', None)]),
   OrderedDict([('id', 8),
                ('form', 'Ефимову'),
                ('lemma', 'ефимова'),
                ('upostag', 'PROPN'),
-               ('xpostag', None),
                ('feats',
                 OrderedDict([('Animacy', 'Anim'),
                              ('Case', 'Acc'),
                              ('Gender', 'Fem'),
-                             ('Number', 'Sing')])),
-               ('head', 6),
-               ('deprel', 'nmod'),
-               ('deps', None),
-               ('misc', None)]),
+                             ('Number', 'Sing')]))]),
   OrderedDict([('id', 9),
                ('form', '.'),
                ('lemma', '.'),
                ('upostag', 'PUNCT'),
-               ('xpostag', '.'),
-               ('feats', None),
-               ('head', 6),
-               ('deprel', 'punct'),
-               ('deps', None),
-               ('misc', None)])]
+               ('feats', None)])]
 
     def test_all_words_features_title(self):
         '''
@@ -265,7 +220,7 @@ class TestFeatureExtr(unittest.TestCase):
                         {'tri_1':'Оторвавшись от бумаг', 'tri_2':'от бумаг ,', 'tri_3':'бумаг , он', 
                         'tri_4':', он взглянул', 'tri_5':'он взглянул на'})
         fact_result = self.test_feature_extr.ngrams(test_data)
-        pp.pprint(fact_result)
+        #pp.pprint(fact_result)
         self.assertEqual(true_result[0], fact_result[0])
         self.assertEqual(true_result[1], fact_result[1])
         
@@ -302,8 +257,45 @@ class TestFeatureExtr(unittest.TestCase):
                         'word':'Оторвавшись',
                         'word_is_digit':False, 'word_is_title':True, 'word_is_upper':False}
         fact_result = self.test_feature_extr.word2features(self.test_sent, test_i)
-        pp.pprint(fact_result)
+        #pp.pprint(fact_result)
         self.assertCountEqual(true_result, fact_result)
+        
+    def test_word2label_pos(self):
+        '''
+        Тест для функции word2label_pos.
+        Рассматриваются случаи, когда подаваемая на вход ЧР совпала с действительной (класс 1) и когда нет (класс 0).
+        '''
+        test_word1 = self.test_sent[0]
+        test_word2 = self.test_sent[1]
+        test_pos = 'VERB'
+        true_result1 = 1
+        true_result2 = 0
+        fact_result1 = self.test_feature_extr.word2label_pos(test_word1, test_pos)
+        fact_result2 = self.test_feature_extr.word2label_pos(test_word2, test_pos)
+        self.assertEqual(true_result1, fact_result1)
+        self.assertEqual(true_result2, fact_result2)
+        
+    def test_word2label_gc(self):
+        '''
+        Тест для функции word2label_pos.
+        Рассматриваются случаи:
+        1) когда подаваемая на вход ГК есть в списке грам. признаков слова и совпала с действительной (класс 1);
+        2) когда подаваемая на вход ГК есть в списке грам. признаков слова и НЕ совпала с действительной (класс 0);
+        3) когда подаваемой на вход ГК нет в списке грам. признаков слова (класс 0).
+        '''
+        test_word1 = self.test_sent[2]
+        test_word2 = self.test_sent[4]
+        test_word3 = self.test_sent[1]
+        test_cat = ('Case', 'Gen')
+        true_result1 = 1
+        true_result2 = 0
+        true_result3 = 0
+        fact_result1 = self.test_feature_extr.word2label_gc(test_word1, test_cat)
+        fact_result2 = self.test_feature_extr.word2label_gc(test_word2, test_cat)
+        fact_result3 = self.test_feature_extr.word2label_gc(test_word3, test_cat)
+        self.assertEqual(true_result1, fact_result1)
+        self.assertEqual(true_result2, fact_result2)
+        self.assertEqual(true_result3, fact_result3)
 
 if __name__ == '__main__':
     unittest.main()
