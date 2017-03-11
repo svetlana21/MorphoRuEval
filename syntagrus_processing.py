@@ -5,6 +5,8 @@ import pprint as pp
 import re
 import sklearn_crfsuite
 from sklearn_crfsuite import metrics
+import _pickle as pickle
+from collections import OrderedDict
 
 class FeatureExtr():
     '''
@@ -22,23 +24,14 @@ class FeatureExtr():
         result = parse(data)
         return result
     
-    def download_categories(self, filename_pos, filename_cat):
+    def download_list(self, filename):
         '''
-        Загрузка файлов с частями речи и грамматическими категориями.
-        Нормализация ГК (преобразование в список кортежей (<категория>, <значение>)).
+        Загрузка списков из файлов (список грамматических категорий, конечные списки некоторых частей речи).
         '''
-        with open(filename_pos) as p:
-            pos = [row.strip() for row in p]
-        with open(filename_cat) as c:
-            categories = c.readlines()
-        cat_tuples = []
-        for category in categories:
-            pat = re.compile('(\w+)=(\w+)')
-            mat = pat.match(category)
-            category = mat.group(1)
-            gr_value = mat.group(2)
-            cat_tuples.append((category, gr_value))
-        return pos, cat_tuples
+        with open(filename) as c:
+            data = c.read()
+            alist = data.split('\n')
+        return alist
     
     def all_words_features(self, word):
         '''
@@ -143,7 +136,7 @@ class FeatureExtr():
         trigr_features = dict(zip(['tri_1', 'tri_2', 'tri_3', 'tri_4', 'tri_5'], trigrams))
         return bigr_features, trigr_features
         
-    def word2features(self,sent,i):
+    def word2features(self, sent, i, postags = False):
         '''
         Функция, формирующая полный список признаков:
             1) токен в uppercase (или нет);
@@ -159,6 +152,8 @@ class FeatureExtr():
             11) если токен является началом предложения, 'EOS' = True;
             12) биграммы;
             13) триграммы.
+        Если значение postags = True, то в качестве признака добавляется postag 
+        (для обучения классификаторов, предсказывающих грамматические категории).
         '''
         word = sent[i]['form']
         word_feat = self.all_words_features(word)
@@ -166,7 +161,7 @@ class FeatureExtr():
                              'pref[:2]','suf[-2:]','pref[:3]','suf[-3:]','pref[:4]','suf[-4:]'], word_feat))
         features.update({'word': word.lower(),
                         'bias': 1.0})
-        if i == 0:
+        if i == 0:  
             features['BOS'] = True
             right_context = self.make_right_context_features(sent,i)
             features.update(right_context[0])
@@ -189,50 +184,34 @@ class FeatureExtr():
         ngrams = self.ngrams(window) 
         features.update(ngrams[0])
         features.update(ngrams[1])
+        if postags == True:
+            features.update({'postag': sent[i]['upostag']})
         return features
         
-    def sent2features(self, sent):
+    def sent2features(self, sent, postags = False):
         '''
         Все признаки для одного предложения.
         '''
-        return [self.word2features(sent, i) for i in range(len(sent))]
+        return [self.word2features(sent, i, postags) for i in range(len(sent))]
 
-    def word2label_pos(self, word, gr_value):
-        '''
-        Классы для одного слова, если классы определяются по части речи.
-        На вход подаётся слово и интересующая ЧР.
-        Если слово соответствует переданной ЧР, то метка класса 1, иначе - 0.
-        '''
-        #pp.pprint(word)
-        label = word['upostag']
-        if label == gr_value:
-            cls = '1'
-        else:
-            cls = '0'
-        return cls
-    
-    def word2label_gc(self, word, gr_value):
+    def word2label_gc(self, word, category):
         '''
         Классы для одного слова, если классы определяются по грамматической категории.
         На вход подаётся слово и интересующая ГК.
-        Если слово соответствует переданной ГК, то метка класса 1, иначе - 0.
+        Если слово соответствует переданной ГК, то метка класса определяется по её значению, иначе - О.
         '''
-        if word['feats'] is not None and gr_value[0] in word['feats']:
-            label = word['feats'][gr_value[0]]
-            if label == gr_value[1]:
-                cls = '1'
-            else:
-                cls = '0'
+        if word['feats'] is not None and category in word['feats']:
+            label = word['feats'][category]
         else:
-            cls = '0'
-        return cls
+            label = 'O'
+        return label
     
     def sent2labels(self, sent, category, pos = False):
         '''
         Все классы для одного предложения.
         '''
         if pos == True:
-            sent_labels = [self.word2label_pos(sent[i], category) for i in range(len(sent))]
+            sent_labels = [sent[i]['upostag'] for i in range(len(sent))]
         else:
             sent_labels = [self.word2label_gc(sent[i], category) for i in range(len(sent))]
         return sent_labels
@@ -242,29 +221,127 @@ class Classifier():
     Класс для обучения.
     '''
     def __init__(self):
-        self.__model = None
+        self.y_pred = []
         
-    def training(self, X_train, y_train, X_test, y_test):
-        crf = sklearn_crfsuite.CRF()
-        crf.fit(X_train, y_train)
-        y_pred = crf.predict(X_test)
-        print(metrics.flat_classification_report(y_test, y_pred, digits=3))   
+    def training(self, X_train, y_train):
+        self.crf = sklearn_crfsuite.CRF()
+        self.crf.fit(X_train, y_train)
+        
+    def predict(self, model, X_test):
+        y_pred = model.predict(X_test)
+#        labels = list(self.crf.classes_)
+#        labels.remove('O')    
+        #print(metrics.flat_classification_report(y_test, y_pred, digits=3)) # убрать y_test
+        return y_pred
+        
+    def add_pos_features(self, X, y_pred):
+        pos_labels = y_pred.copy()
+        for sent_ind in range(len(X)):
+            sent_labels = pos_labels.pop(0)
+            for word_ind in range(len(X[sent_ind])):
+                X[sent_ind][word_ind].update({'postag': sent_labels[word_ind]})
+        return X
+        
+    def pickle_model(self, name):
+        '''
+        Pickle модели.
+        '''
+        with open(name, 'wb') as f:
+            pickle.dump(self.crf, f)
         
 if __name__ == '__main__':
-    feat_extr = FeatureExtr()
-    clfr = Classifier()
-    result_train = feat_extr.download('GIKRYA_train.conllu')
-    result_test = feat_extr.download('GIKRYA_test.conllu')
-    pos, cat_tuples = feat_extr.download_categories('pos.txt', 'categories.txt')
-    X_train = [feat_extr.sent2features(sent) for sent in result_train]
-    X_test = [feat_extr.sent2features(sent) for sent in result_test]
-    for postag in pos:      # цикл, создающий классификаторы для частей речи
-        y_train = [feat_extr.sent2labels(sent, postag, True) for sent in result_train]
-        y_test = [feat_extr.sent2labels(sent, postag, True) for sent in result_test]
-        print(postag)
-        clfr.training(X_train, y_train, X_test, y_test)
-    for category in cat_tuples:      # цикл, создающий классификаторы для грам. категорий
+    feat_extr = FeatureExtr()   # объект для извлечения признаков
+    clfr_pos = Classifier()     # классификатор для частей речи
+    clfr_gc = Classifier()      # классификатор для грам. категорий
+    result_train = feat_extr.download('GIKRYA_train1.conllu')   # обучающая выборка
+    categories = feat_extr.download_list('categories.txt')      # список грам. категорий
+    X_train = [feat_extr.sent2features(sent) for sent in result_train]      # множество признаков (без постэгов)
+    y_train = [feat_extr.sent2labels(sent, None, True) for sent in result_train]    # классы - части речи
+    clfr_pos.training(X_train, y_train)     # обучение модели для частей речи и её сохранение
+    clfr_pos.pickle_model('pos.pickle')
+    X_train_new = [feat_extr.sent2features(sent, True) for sent in result_train]    # корректировка множества признаков: 
+                                                                                    #добавление к уже имеющимся признака postag
+    for category in categories:      # цикл, создающий модели для грам. категорий
         y_train = [feat_extr.sent2labels(sent, category) for sent in result_train]
-        y_test = [feat_extr.sent2labels(sent, category) for sent in result_test]
-        print(category)
-        clfr.training(X_train, y_train, X_test, y_test)
+        clfr_gc.training(X_train_new, y_train)
+        clfr_gc.pickle_model('{}.pickle'.format(category))
+    '''
+    Определение тегов на тестовой выборке.
+    '''
+    result_test = feat_extr.download('GIKRYA_test1.conllu')     # тестовая выборка
+    X_test = [feat_extr.sent2features(sent) for sent in result_test]        # множество признаков
+    #y_test = [feat_extr.sent2labels(sent, None, True) for sent in result_test]      # классы - грам. значения грам. категорий
+    def load_model(name):
+        '''
+        Загрузка модели.
+        '''
+        with open(name, 'rb') as f:
+            model = pickle.load(f)
+        return model
+    pos_model = load_model('pos.pickle')
+    pos_pred = clfr_pos.predict(pos_model, X_test)      # определение постэгов на тестовом множестве
+    X_test_new = clfr_pos.add_pos_features(X_test, pos_pred)    # добавление полученных постэгов в качестве признаков
+    pred_categories = {}
+    for category in categories:     # определение грамматических категорий
+        #y_test = [feat_extr.sent2labels(sent, category) for sent in result_test]
+        gc_model = load_model('{}.pickle'.format(category))
+        gc_pred = clfr_gc.predict(gc_model, X_test_new)
+        pred_categories.update({category: gc_pred})   # словарь со всеми полученными грам. значениями  
+    '''
+    Теггирование
+    '''
+    adp =  feat_extr.download_list('ADP.txt')   # загрузка конечных списков некоторых частей речи 
+    conj = feat_extr.download_list('CONJ.txt')
+    det = feat_extr.download_list('DET.txt')
+    h =  feat_extr.download_list('H.txt')
+    part =  feat_extr.download_list('PART.txt')
+    pron = feat_extr.download_list('PRON.txt')
+    
+    for sent_i, sent in enumerate(result_test):    # замена тегов из исходной тестовой выборки на предсказанные
+        sent_pos_labels = pos_pred.pop(0)       # частеречные теги для одного предложения
+        sent_gc_labels = [pred_categories[category].pop(0) for category in categories]      # теги грам. категорий для одного предложения
+        for word_i, word in enumerate(result_test[sent_i]):
+            if word['upostag'] != sent_pos_labels[word_i]:      # если постэг в исходной выборке не совпадает с предсказанным,
+                                                                # заменить его на предсказанный
+                word['upostag'] = sent_pos_labels[word_i]
+            if word['lemma'] in adp == 1:     # если слово есть в одном из конечных списков, заменить предсказанный тег нужным
+                word['upostag'] = 'ADP'
+            if word['lemma'] in conj == 1:
+                word['upostag'] = 'CONJ'
+            if word['lemma'] in det == 1:
+                word['upostag'] = 'DET'
+            if word['lemma'] in h == 1:
+                word['upostag'] = 'H'
+            if word['lemma'] in part == 1:
+                word['upostag'] = 'PART'
+            if word['lemma'] in pron == 1:
+                word['upostag'] = 'PRON'
+            for cat_i, category in enumerate(categories):   # замена грам. категорий (ГК)
+                if word['feats'] is not None \      # если в исходной выборке у слова указаны какие-либо ГК
+                    and category in word['feats'] \     # и если очередная категория есть в списке
+                    and word['feats'][category] != sent_gc_labels[cat_i][word_i]:   # и есть значение этой ГК не равно предсказанному
+                        if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то заменить
+                            word['feats'][category] = sent_gc_labels[cat_i][word_i]
+                        else:                                           # иначе удалить категорию
+                            del word['feats'][category]
+                if word['feats'] is not None \          # если в исходной выборке у слова указаны какие-либо ГК
+                    and category not in word['feats']:  # но очередной ГК нет в списке
+                        if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то вставить новое значение в словарь
+                            word['feats'][category] = sent_gc_labels[cat_i][word_i]
+                if word['feats'] is None and sent_gc_labels[cat_i][word_i] != 'O':  # если в исх. выборке не указаны никакие ГК, 
+                                                                                    # но модель что-то предсказала, то добавить словарь
+                    word['feats'] = OrderedDict([(category, sent_gc_labels[cat_i][word_i])])
+    with open('results.txt', 'w', encoding='utf-8') as result:      # запись в файл
+        for sent in result_test:
+            for word in sent:
+                result.write('{}\t{}\t{}\t{}\t'.format(word['id'], word['form'], word['lemma'], word['upostag']))
+                if word['feats'] is not None and word['feats'] != OrderedDict():
+                    keys_list = word['feats'].keys()
+                    for i, key in enumerate(keys_list):
+                        if i < len(keys_list)-1:
+                            result.write('{}={}|'.format(key, word['feats'][key]))
+                        else:
+                            result.write('{}={}\n'.format(key, word['feats'][key]))
+                else:
+                    result.write('_\n')
+            result.write('\n')
