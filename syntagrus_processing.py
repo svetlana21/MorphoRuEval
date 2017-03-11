@@ -317,15 +317,18 @@ if __name__ == '__main__':
             if word['lemma'] in pron == 1:
                 word['upostag'] = 'PRON'
             for cat_i, category in enumerate(categories):   # замена грам. категорий (ГК)
-                if word['feats'] is not None \      # если в исходной выборке у слова указаны какие-либо ГК
-                    and category in word['feats'] \     # и если очередная категория есть в списке
-                    and word['feats'][category] != sent_gc_labels[cat_i][word_i]:   # и есть значение этой ГК не равно предсказанному
+                if word['feats'] is not None \
+                    and category in word['feats'] \
+                    and word['feats'][category] != sent_gc_labels[cat_i][word_i]:   # если в исходной выборке у слова указаны какие-либо ГК
+                                                                                    # и если очередная категория есть в списке
+                                                                                    # и есть значение этой ГК не равно предсказанному
                         if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то заменить
                             word['feats'][category] = sent_gc_labels[cat_i][word_i]
                         else:                                           # иначе удалить категорию
                             del word['feats'][category]
-                if word['feats'] is not None \          # если в исходной выборке у слова указаны какие-либо ГК
-                    and category not in word['feats']:  # но очередной ГК нет в списке
+                if word['feats'] is not None \
+                    and category not in word['feats']:      # если в исходной выборке у слова указаны какие-либо ГК
+                                                            # но очередной ГК нет в списке
                         if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то вставить новое значение в словарь
                             word['feats'][category] = sent_gc_labels[cat_i][word_i]
                 if word['feats'] is None and sent_gc_labels[cat_i][word_i] != 'O':  # если в исх. выборке не указаны никакие ГК, 
@@ -345,3 +348,14 @@ if __name__ == '__main__':
                 else:
                     result.write('_\n')
             result.write('\n')
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
