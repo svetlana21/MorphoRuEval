@@ -215,10 +215,21 @@ class FeatureExtr():
         else:
             sent_labels = [self.word2label_gc(sent[i], category) for i in range(len(sent))]
         return sent_labels
+    
+    def add_pos_features(self, X, y_pred):
+        '''
+        Добавление уже предсказанных частеречных тегов в качестве признаков.
+        '''
+        pos_labels = y_pred.copy()
+        for sent_ind in range(len(X)):
+            sent_labels = pos_labels.pop(0)
+            for word_ind in range(len(X[sent_ind])):
+                X[sent_ind][word_ind].update({'postag': sent_labels[word_ind]})
+        return X
         
 class Classifier():
     '''
-    Класс для обучения.
+    Классификаторы, обучение и прогнозирование.
     '''
     def __init__(self):
         self.y_pred = []
@@ -234,120 +245,143 @@ class Classifier():
         #print(metrics.flat_classification_report(y_test, y_pred, digits=3)) # убрать y_test
         return y_pred
         
-    def add_pos_features(self, X, y_pred):
-        pos_labels = y_pred.copy()
-        for sent_ind in range(len(X)):
-            sent_labels = pos_labels.pop(0)
-            for word_ind in range(len(X[sent_ind])):
-                X[sent_ind][word_ind].update({'postag': sent_labels[word_ind]})
-        return X
-        
     def pickle_model(self, name):
         '''
         Pickle модели.
         '''
         with open(name, 'wb') as f:
             pickle.dump(self.crf, f)
-        
-if __name__ == '__main__':
-    feat_extr = FeatureExtr()   # объект для извлечения признаков
-    clfr_pos = Classifier()     # классификатор для частей речи
-    clfr_gc = Classifier()      # классификатор для грам. категорий
-    result_train = feat_extr.download('GIKRYA_train1.conllu')   # обучающая выборка
-    categories = feat_extr.download_list('categories.txt')      # список грам. категорий
-    X_train = [feat_extr.sent2features(sent) for sent in result_train]      # множество признаков (без постэгов)
-    y_train = [feat_extr.sent2labels(sent, None, True) for sent in result_train]    # классы - части речи
-    clfr_pos.training(X_train, y_train)     # обучение модели для частей речи и её сохранение
-    clfr_pos.pickle_model('pos.pickle')
-    X_train_new = [feat_extr.sent2features(sent, True) for sent in result_train]    # корректировка множества признаков: 
-                                                                                    #добавление к уже имеющимся признака postag
-    for category in categories:      # цикл, создающий модели для грам. категорий
-        y_train = [feat_extr.sent2labels(sent, category) for sent in result_train]
-        clfr_gc.training(X_train_new, y_train)
-        clfr_gc.pickle_model('{}.pickle'.format(category))
+            
+class Train_Predict():
     '''
-    Определение тегов на тестовой выборке.
+    Обучение от начала до конца и прогнозирование.
     '''
-    result_test = feat_extr.download('GIKRYA_test1.conllu')     # тестовая выборка
-    X_test = [feat_extr.sent2features(sent) for sent in result_test]        # множество признаков
-    #y_test = [feat_extr.sent2labels(sent, None, True) for sent in result_test]      # классы - грам. значения грам. категорий
-    def load_model(name):
+    def __init__(self):
+        self.feat_extr = FeatureExtr()   # объект для извлечения признаков
+        self.clfr_pos = Classifier()     # классификатор для частей речи
+        self.clfr_gc = Classifier()      # классификатор для грам. категорий
+        self.categories = self.feat_extr.download_list('categories.txt')      # список грам. категорий
+
+    def train_models(self, X_train_file):
         '''
-        Загрузка модели.
+        Обучение.
+        '''
+        result_train = self.feat_extr.download(X_train_file)   # обучающая выборка  
+        X_train = [self.feat_extr.sent2features(sent) for sent in result_train]      # множество признаков (без постэгов)
+        y_train = [self.feat_extr.sent2labels(sent, None, True) for sent in result_train]    # классы - части речи
+        self.clfr_pos.training(X_train, y_train)     # обучение модели для частей речи и её сохранение
+        self.clfr_pos.pickle_model('pos.pickle')
+        X_train_new = [self.feat_extr.sent2features(sent, True) for sent in result_train]    #добавление к уже имеющимся признакам признака postag
+        for category in self.categories:      # цикл, создающий модели для грам. категорий
+            y_train = [self.feat_extr.sent2labels(sent, category) for sent in result_train]
+            self.clfr_gc.training(X_train_new, y_train)
+            self.clfr_gc.pickle_model('{}.pickle'.format(category))
+            
+    def load_model(self, name):
+        '''
+        Загрузка сохранённых моделей.
         '''
         with open(name, 'rb') as f:
             model = pickle.load(f)
         return model
-    pos_model = load_model('pos.pickle')
-    pos_pred = clfr_pos.predict(pos_model, X_test)      # определение постэгов на тестовом множестве
-    X_test_new = clfr_pos.add_pos_features(X_test, pos_pred)    # добавление полученных постэгов в качестве признаков
-    pred_categories = {}
-    for category in categories:     # определение грамматических категорий
-        #y_test = [feat_extr.sent2labels(sent, category) for sent in result_test]
-        gc_model = load_model('{}.pickle'.format(category))
-        gc_pred = clfr_gc.predict(gc_model, X_test_new)
-        pred_categories.update({category: gc_pred})   # словарь со всеми полученными грам. значениями  
-    '''
-    Теггирование
-    '''
-    adp =  feat_extr.download_list('ADP.txt')   # загрузка конечных списков некоторых частей речи 
-    conj = feat_extr.download_list('CONJ.txt')
-    det = feat_extr.download_list('DET.txt')
-    h =  feat_extr.download_list('H.txt')
-    part =  feat_extr.download_list('PART.txt')
-    pron = feat_extr.download_list('PRON.txt')
+            
+    def predicting(self, X_test_file):
+        '''
+        Определение тегов на тестовой выборке.
+        '''
+        result_test = self.feat_extr.download(X_test_file)     # тестовая выборка
+        X_test = [self.feat_extr.sent2features(sent) for sent in result_test]        # множество признаков
+        #y_test = [feat_extr.sent2labels(sent, None, True) for sent in result_test]      # классы - грам. значения грам. категорий
+        pos_model = self.load_model('pos.pickle')
+        pos_pred = self.clfr_pos.predict(pos_model, X_test)      # определение постэгов слов в тестовой выборке
+        X_test_new = self.feat_extr.add_pos_features(X_test, pos_pred)    # добавление полученных постэгов в качестве признаков для моделей, 
+                                                                          # распознающих грам. категории
+        pred_categories = {}
+        for category in self.categories:     # определение грамматических категорий
+            #y_test = [feat_extr.sent2labels(sent, category) for sent in result_test]
+            gc_model = self.load_model('{}.pickle'.format(category))
+            gc_pred = self.clfr_gc.predict(gc_model, X_test_new)
+            pred_categories.update({category: gc_pred})   # словарь со всеми полученными грам. значениями
+        return result_test, pos_pred, pred_categories
+            
+    def change_tags(self, result_test, pos_pred, pred_categories):
+        '''
+        Вставка предсказанных тегов на их место в словарь, полученный после парсинга тестовой выборки.
+        '''
+        adp =  self.feat_extr.download_list('ADP.txt')   # загрузка конечных списков некоторых частей речи 
+        conj = self.feat_extr.download_list('CONJ.txt')
+        det = self.feat_extr.download_list('DET.txt')
+        h =  self.feat_extr.download_list('H.txt')
+        part =  self.feat_extr.download_list('PART.txt')
+        pron = self.feat_extr.download_list('PRON.txt')
     
-    for sent_i, sent in enumerate(result_test):    # замена тегов из исходной тестовой выборки на предсказанные
-        sent_pos_labels = pos_pred.pop(0)       # частеречные теги для одного предложения
-        sent_gc_labels = [pred_categories[category].pop(0) for category in categories]      # теги грам. категорий для одного предложения
-        for word_i, word in enumerate(result_test[sent_i]):
-            if word['upostag'] != sent_pos_labels[word_i]:      # если постэг в исходной выборке не совпадает с предсказанным,
-                                                                # заменить его на предсказанный
-                word['upostag'] = sent_pos_labels[word_i]
-            if word['lemma'] in adp == 1:     # если слово есть в одном из конечных списков, заменить предсказанный тег нужным
-                word['upostag'] = 'ADP'
-            if word['lemma'] in conj == 1:
-                word['upostag'] = 'CONJ'
-            if word['lemma'] in det == 1:
-                word['upostag'] = 'DET'
-            if word['lemma'] in h == 1:
-                word['upostag'] = 'H'
-            if word['lemma'] in part == 1:
-                word['upostag'] = 'PART'
-            if word['lemma'] in pron == 1:
-                word['upostag'] = 'PRON'
-            for cat_i, category in enumerate(categories):   # замена грам. категорий (ГК)
-                if word['feats'] is not None \
-                    and category in word['feats'] \
-                    and word['feats'][category] != sent_gc_labels[cat_i][word_i]:   # если в исходной выборке у слова указаны какие-либо ГК
-                                                                                    # и если очередная категория есть в списке
-                                                                                    # и есть значение этой ГК не равно предсказанному
-                        if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то заменить
-                            word['feats'][category] = sent_gc_labels[cat_i][word_i]
-                        else:                                           # иначе удалить категорию
-                            del word['feats'][category]
-                if word['feats'] is not None \
-                    and category not in word['feats']:      # если в исходной выборке у слова указаны какие-либо ГК
-                                                            # но очередной ГК нет в списке
+        for sent_i, sent in enumerate(result_test):    # замена тегов из исходной тестовой выборки на предсказанные
+            sent_pos_labels = pos_pred.pop(0)       # частеречные теги для одного предложения
+            sent_gc_labels = [pred_categories[category].pop(0) for category in self.categories]      # теги грам. категорий для одного предложения
+            for word_i, word in enumerate(result_test[sent_i]):
+                if word['upostag'] != sent_pos_labels[word_i]:      # если постэг в исходной выборке не совпадает с предсказанным,
+                                                                    # заменить его на предсказанный
+                    word['upostag'] = sent_pos_labels[word_i]
+                if word['lemma'] in adp:     # если слово есть в одном из конечных списков, заменить предсказанный тег нужным
+                    word['upostag'] = 'ADP'
+                if word['lemma'] in conj:
+                    word['upostag'] = 'CONJ'
+                if word['lemma'] in det:
+                    word['upostag'] = 'DET'
+                if word['lemma'] in h:
+                    word['upostag'] = 'H'
+                if word['lemma'] in part:
+                    word['upostag'] = 'PART'
+                if word['lemma'] in pron:
+                    word['upostag'] = 'PRON'
+                for cat_i, category in enumerate(self.categories):   # замена грам. категорий (ГК)
+                    if word['feats'] is not None \
+                        and category in word['feats'] \
+                        and word['feats'][category] != sent_gc_labels[cat_i][word_i]:   # если в исходной выборке у слова указаны какие-либо ГК
+                                                                                        # и если очередная категория есть в списке
+                                                                                        # и есть значение этой ГК не равно предсказанному
+                            if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то заменить
+                                word['feats'][category] = sent_gc_labels[cat_i][word_i]
+                            else:                                           # иначе удалить категорию
+                                del word['feats'][category]
+                    if word['feats'] is not None \
+                        and category not in word['feats']:      # если в исходной выборке у слова указаны какие-либо ГК
+                                                                # но очередной ГК нет в списке
                         if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то вставить новое значение в словарь
                             word['feats'][category] = sent_gc_labels[cat_i][word_i]
-                if word['feats'] is None and sent_gc_labels[cat_i][word_i] != 'O':  # если в исх. выборке не указаны никакие ГК, 
-                                                                                    # но модель что-то предсказала, то добавить словарь
-                    word['feats'] = OrderedDict([(category, sent_gc_labels[cat_i][word_i])])
-    with open('results.txt', 'w', encoding='utf-8') as result:      # запись в файл
-        for sent in result_test:
-            for word in sent:
-                result.write('{}\t{}\t{}\t{}\t'.format(word['id'], word['form'], word['lemma'], word['upostag']))
-                if word['feats'] is not None and word['feats'] != OrderedDict():
-                    keys_list = word['feats'].keys()
-                    for i, key in enumerate(keys_list):
-                        if i < len(keys_list)-1:
-                            result.write('{}={}|'.format(key, word['feats'][key]))
-                        else:
-                            result.write('{}={}\n'.format(key, word['feats'][key]))
-                else:
-                    result.write('_\n')
-            result.write('\n')
+                    if word['feats'] is None and sent_gc_labels[cat_i][word_i] != 'O':  # если в исх. выборке не указаны никакие ГК, 
+                                                                                        # но модель что-то предсказала, то добавить словарь
+                        word['feats'] = OrderedDict([(category, sent_gc_labels[cat_i][word_i])])
+        return result_test
+                        
+    def writing(self, results):
+        '''
+        Запись в файл полученных результатов.
+        '''
+        with open('results.txt', 'w', encoding='utf-8') as result:
+            for sent in results:
+                for word in sent:
+                    result.write('{}\t{}\t{}\t{}\t'.format(word['id'], word['form'], word['lemma'], word['upostag']))
+                    if word['feats'] is not None and word['feats'] != OrderedDict():
+                        keys_list = word['feats'].keys()
+                        for i, key in enumerate(keys_list):
+                            if i < len(keys_list)-1:
+                                result.write('{}={}|'.format(key, word['feats'][key]))
+                            else:
+                                result.write('{}={}\n'.format(key, word['feats'][key]))
+                    else:
+                        result.write('_\n')
+                result.write('\n')
+                
+if __name__ == '__main__':
+    analyzer = Train_Predict()
+    analyzer.train_models('GIKRYA_train1.conllu')
+    result_test, pos_pred, pred_categories = analyzer.predicting('GIKRYA_test1.conllu')
+    results = analyzer.change_tags(result_test, pos_pred, pred_categories)
+    analyzer.writing(results)
+    
+    
+    
     
     
     
