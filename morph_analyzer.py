@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-from conllu_parser import parse
+from conllu.parser import parse
 from nltk.util import ngrams
 import pprint as pp
-import re
 import sklearn_crfsuite
 from sklearn_crfsuite import metrics
 import _pickle as pickle
@@ -198,7 +197,7 @@ class FeatureExtr():
         '''
         Классы для одного слова, если классы определяются по грамматической категории.
         На вход подаётся слово и интересующая ГК.
-        Если слово соответствует переданной ГК, то метка класса определяется по её значению, иначе - О.
+        Если слово соответствует переданной ГК, то метка класса определяется по её грам. значению, иначе - О.
         '''
         if word['feats'] is not None and category in word['feats']:
             label = word['feats'][category]
@@ -285,7 +284,7 @@ class Train_Predict():
             model = pickle.load(f)
         return model
             
-    def predicting(self, X_test_file):
+    def prediction(self, X_test_file):
         '''
         Определение тегов на тестовой выборке.
         '''
@@ -375,11 +374,10 @@ class Train_Predict():
                 
 if __name__ == '__main__':
     analyzer = Train_Predict()
-    analyzer.train_models('GIKRYA_train1.conllu')
-    result_test, pos_pred, pred_categories = analyzer.predicting('GIKRYA_test1.conllu')
+    analyzer.train_models('OpCorp_train.conllu')
+    result_test, pos_pred, pred_categories = analyzer.prediction('OpCorp_test.conllu')
     results = analyzer.change_tags(result_test, pos_pred, pred_categories)
-    analyzer.writing(results)
-    
+    analyzer.writing(results)    
     
     
     
