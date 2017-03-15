@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from conllu.parser import parse
+from conllu_parser import parse
 from nltk.util import ngrams
 import pprint as pp
 import sklearn_crfsuite
@@ -21,7 +21,22 @@ class FeatureExtr():
         with open(filename, 'r', encoding='utf-8') as f:
             data = f.read()
         result = parse(data)
-        return result
+        return result    
+        
+    def download_non_labeled(self, filename):
+        '''
+        Загрузка неразмеченной выборки. 
+        Преобразование в формат, аналогичный расперсенному conllu: списки словарей с ключами 'id' и 'form'.
+        '''
+        with open(filename, 'r', encoding='utf-8') as f:
+            data = f.read()
+            sents_list = data.split('\n\n')
+        words_list = [el.split('\n') for el in sents_list]
+        result_list = [[word.split('\t') for word in sent] for sent in words_list]
+        if result_list[-1][-1] == ['']:
+            result_list[-1].pop()
+        ordered = [[OrderedDict(zip(['id','form'], word)) for word in sent] for sent in result_list]
+        return ordered
     
     def download_list(self, filename):
         '''
@@ -160,29 +175,32 @@ class FeatureExtr():
                              'pref[:2]','suf[-2:]','pref[:3]','suf[-3:]','pref[:4]','suf[-4:]'], word_feat))
         features.update({'word': word.lower(),
                         'bias': 1.0})
-        if i == 0:  
-            features['BOS'] = True
-            right_context = self.make_right_context_features(sent,i)
-            features.update(right_context[0])
-            window = right_context[1]
-            window.insert(0, word)
-        elif i == len(sent)-1:
-            features['EOS'] = True
-            left_context = self.make_left_context_features(sent,i)
-            features.update(left_context[0])
-            window = left_context[1]
-            window.append(word)
+        if len(sent) > 1:
+            if i == 0:  
+                features['BOS'] = True
+                right_context = self.make_right_context_features(sent,i)
+                features.update(right_context[0])
+                window = right_context[1]
+                window.insert(0, word)
+            elif i == len(sent)-1:
+                features['EOS'] = True
+                left_context = self.make_left_context_features(sent,i)
+                features.update(left_context[0])
+                window = left_context[1]
+                window.append(word)
+            else:
+                left_context = self.make_left_context_features(sent,i)
+                features.update(left_context[0])
+                right_context = self.make_right_context_features(sent,i)
+                features.update(right_context[0])
+                window = left_context[1]
+                window.append(word)
+                window.extend(right_context[1])
+            ngrams = self.ngrams(window) 
+            features.update(ngrams[0])
+            features.update(ngrams[1])
         else:
-            left_context = self.make_left_context_features(sent,i)
-            features.update(left_context[0])
-            right_context = self.make_right_context_features(sent,i)
-            features.update(right_context[0])
-            window = left_context[1]
-            window.append(word)
-            window.extend(right_context[1])
-        ngrams = self.ngrams(window) 
-        features.update(ngrams[0])
-        features.update(ngrams[1])
+            features['BOS'] = True
         if postags == True:
             features.update({'postag': sent[i]['upostag']})
         return features
@@ -284,11 +302,14 @@ class Train_Predict():
             model = pickle.load(f)
         return model
             
-    def prediction(self, X_test_file):
+    def prediction(self, X_test_file, labeled = True):
         '''
         Определение тегов на тестовой выборке.
         '''
-        result_test = self.feat_extr.download(X_test_file)     # тестовая выборка
+        if labeled is True:
+            result_test = self.feat_extr.download(X_test_file)     # размеченная тестовая выборка
+        else:
+            result_test = self.feat_extr.download_non_labeled(X_test_file)     # неразмеченная тестовая выборка
         X_test = [self.feat_extr.sent2features(sent) for sent in result_test]        # множество признаков
         #y_test = [feat_extr.sent2labels(sent, None, True) for sent in result_test]      # классы - грам. значения грам. категорий
         pos_model = self.load_model('pos.pickle')
@@ -303,9 +324,11 @@ class Train_Predict():
             pred_categories.update({category: gc_pred})   # словарь со всеми полученными грам. значениями
         return result_test, pos_pred, pred_categories
             
-    def change_tags(self, result_test, pos_pred, pred_categories):
+    def add_tags(self, result_test, pos_pred, pred_categories, labeled = True):
         '''
-        Вставка предсказанных тегов на их место в словарь, полученный после парсинга тестовой выборки.
+        Теггер тестовой выборки: 
+        вставка предсказанных тегов на их место в словарь, полученный после парсинга тестовой выборки.
+        Если выборка изначально была размечена, ключи 'upostag' и 'feats' удаляются, затем снова добавляются с новыми значениями.
         '''
         adp =  self.feat_extr.download_list('ADP.txt')   # загрузка конечных списков некоторых частей речи 
         conj = self.feat_extr.download_list('CONJ.txt')
@@ -318,41 +341,31 @@ class Train_Predict():
             sent_pos_labels = pos_pred.pop(0)       # частеречные теги для одного предложения
             sent_gc_labels = [pred_categories[category].pop(0) for category in self.categories]      # теги грам. категорий для одного предложения
             for word_i, word in enumerate(result_test[sent_i]):
-                if word['upostag'] != sent_pos_labels[word_i]:      # если постэг в исходной выборке не совпадает с предсказанным,
-                                                                    # заменить его на предсказанный
-                    word['upostag'] = sent_pos_labels[word_i]
-                if word['lemma'] in adp:     # если слово есть в одном из конечных списков, заменить предсказанный тег нужным
+                if labeled is True:
+                    del word['upostag']     
+                    del word['feats']
+                    check = 'lemma'
+                else:
+                    check = 'form'
+                word['upostag'] = sent_pos_labels[word_i]      # добавить ключ 'upostag'
+                if word[check] in adp:     # если слово есть в одном из конечных списков, заменить предсказанный тег нужным
                     word['upostag'] = 'ADP'
-                if word['lemma'] in conj:
+                if word[check] in conj:
                     word['upostag'] = 'CONJ'
-                if word['lemma'] in det:
+                if word[check] in det:
                     word['upostag'] = 'DET'
-                if word['lemma'] in h:
+                if word[check] in h:
                     word['upostag'] = 'H'
-                if word['lemma'] in part:
+                if word[check] in part:
                     word['upostag'] = 'PART'
-                if word['lemma'] in pron:
+                if word[check] in pron:
                     word['upostag'] = 'PRON'
-                for cat_i, category in enumerate(self.categories):   # замена грам. категорий (ГК)
-                    if word['feats'] is not None \
-                        and category in word['feats'] \
-                        and word['feats'][category] != sent_gc_labels[cat_i][word_i]:   # если в исходной выборке у слова указаны какие-либо ГК
-                                                                                        # и если очередная категория есть в списке
-                                                                                        # и есть значение этой ГК не равно предсказанному
-                            if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то заменить
-                                word['feats'][category] = sent_gc_labels[cat_i][word_i]
-                            else:                                           # иначе удалить категорию
-                                del word['feats'][category]
-                    if word['feats'] is not None \
-                        and category not in word['feats']:      # если в исходной выборке у слова указаны какие-либо ГК
-                                                                # но очередной ГК нет в списке
-                        if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то вставить новое значение в словарь
-                            word['feats'][category] = sent_gc_labels[cat_i][word_i]
-                    if word['feats'] is None and sent_gc_labels[cat_i][word_i] != 'O':  # если в исх. выборке не указаны никакие ГК, 
-                                                                                        # но модель что-то предсказала, то добавить словарь
-                        word['feats'] = OrderedDict([(category, sent_gc_labels[cat_i][word_i])])
+                word['feats'] = OrderedDict()       # добавление ключа 'feats'       
+                for cat_i, category in enumerate(self.categories):   # добавление грам. категорий в 'feats'
+                    if sent_gc_labels[cat_i][word_i] != 'O':        # если предсказан не О-класс, то вставить новое значение в словарь
+                        word['feats'].update({category: sent_gc_labels[cat_i][word_i]})
         return result_test
-                        
+        
     def writing(self, results):
         '''
         Запись в файл полученных результатов.
@@ -360,7 +373,7 @@ class Train_Predict():
         with open('results.txt', 'w', encoding='utf-8') as result:
             for sent in results:
                 for word in sent:
-                    result.write('{}\t{}\t{}\t{}\t'.format(word['id'], word['form'], word['lemma'], word['upostag']))
+                    result.write('{}\t{}\t{}\t'.format(word['id'], word['form'], word['upostag']))
                     if word['feats'] is not None and word['feats'] != OrderedDict():
                         keys_list = word['feats'].keys()
                         for i, key in enumerate(keys_list):
@@ -374,9 +387,9 @@ class Train_Predict():
                 
 if __name__ == '__main__':
     analyzer = Train_Predict()
-    analyzer.train_models('OpCorp_train.conllu')
-    result_test, pos_pred, pred_categories = analyzer.prediction('OpCorp_test.conllu')
-    results = analyzer.change_tags(result_test, pos_pred, pred_categories)
+    analyzer.train_models('GIKRYA_train.conllu')
+    result_test, pos_pred, pred_categories = analyzer.prediction('GIKRYA_test.conllu')
+    results = analyzer.add_tags(result_test, pos_pred, pred_categories)
     analyzer.writing(results)    
     
     
