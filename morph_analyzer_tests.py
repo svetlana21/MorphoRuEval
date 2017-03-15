@@ -471,6 +471,7 @@ class TestTrain_Predict(unittest.TestCase):
                
     def test_change_tags(self):
         '''
+        Тест функции для теггирования изначально размеченной тестовой выборки.
         Случаи:
         1. Слово 1: первоначальный постэг не совпадает с предсказанным. В word['feats'] изначально есть грам. категории, но они не совпадают с предсказанными.
         2. Слово 2: слово в одном из конечных списков. Предсказанный неверный постэг заменяется на верный.
@@ -504,7 +505,7 @@ class TestTrain_Predict(unittest.TestCase):
                ('form', 'от'),
                ('lemma', 'от'),
                ('upostag', 'ADP'),
-               ('feats', None)])],
+               ('feats', OrderedDict())])],
   [OrderedDict([('id', 3),
                ('form', 'бумаг'),
                ('lemma', 'бумага'),
@@ -520,7 +521,59 @@ class TestTrain_Predict(unittest.TestCase):
                ('feats', 
                 OrderedDict([('Case', 'Loc'),
                             ('Gender', 'Fem')]))])]]
-        fact_result = self.test_train_pred.change_tags(self.test_sent, pos_pred_test, pred_categories_test)
+        fact_result = self.test_train_pred.add_tags(self.test_sent, pos_pred_test, pred_categories_test)
+        self.assertCountEqual(true_result, fact_result)
+        
+    def test_add_tags(self):
+        '''
+        Тест функции для теггирования изначально неразмеченной тестовой выборки.
+        '''
+        test_sent = [[OrderedDict([('id', 1),
+               ('form', 'Оторвавшись')]),
+                OrderedDict([('id', 2),
+               ('form', 'от')])],
+                [OrderedDict([('id', 3),
+               ('form', 'бумаг')]),
+                OrderedDict([('id', 4),
+               ('form', ',')])]]  
+        pos_pred_test = [['NOUN', 'PRON'],['NOUN', 'ADJ']]
+        pred_categories_test = {'Animacy': [['Anim', 'O'],['Inan', 'O']],
+                                 'Case': [['Nom', 'O'],['Acc', 'Loc']],
+                                 'Gender': [['O', 'O'],['O', 'Fem']],
+                                 'Number': [['O', 'O'],['Plur', 'O']],
+                                 'Tense': [['O','O'],['O','O']],
+                                 'Person': [['O','O'],['O','O']],
+                                 'VerbForm': [['O','O'],['O','O']],
+                                 'Mood': [['O','O'],['O','O']],
+                                 'Voice': [['O','O'],['O','O']],
+                                 'Variant': [['O','O'],['O','O']],
+                                 'Degree': [['O','O'],['O','O']],
+                                 'Form': [['O','O'],['O','O']]}
+        true_result = [[OrderedDict([('id', 1),
+               ('form', 'Оторвавшись'),
+               ('upostag', 'NOUN'),
+               ('feats',
+                OrderedDict([('Animacy', 'Anim'),
+                             ('Case', 'Nom')]))]),
+  OrderedDict([('id', 2),
+               ('form', 'от'),
+               ('upostag', 'ADP'),
+               ('feats', OrderedDict())])],
+  [OrderedDict([('id', 3),
+               ('form', 'бумаг'),
+               ('upostag', 'NOUN'),
+               ('feats',
+                OrderedDict([('Animacy', 'Inan'),
+                             ('Case', 'Acc'),
+                             ('Number', 'Plur')]))]),
+  OrderedDict([('id', 4),
+               ('form', ','),
+               ('upostag', 'ADJ'),
+               ('feats', 
+                OrderedDict([('Case', 'Loc'),
+                            ('Gender', 'Fem')]))])]]
+        fact_result = self.test_train_pred.add_tags(test_sent, pos_pred_test, pred_categories_test, False)
+        pp.pprint(fact_result)
         self.assertCountEqual(true_result, fact_result)
 
 if __name__ == '__main__':
