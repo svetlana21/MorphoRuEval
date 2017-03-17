@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from conllu_parser import parse
+from conllu.parser import parse
 from nltk.util import ngrams
 import pprint as pp
 import sklearn_crfsuite
