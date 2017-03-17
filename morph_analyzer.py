@@ -310,18 +310,24 @@ class Train_Predict():
             result_test = self.feat_extr.download(X_test_file)     # размеченная тестовая выборка
         else:
             result_test = self.feat_extr.download_non_labeled(X_test_file)     # неразмеченная тестовая выборка
+        print(X_test_file, ' is downloaded.')
         X_test = [self.feat_extr.sent2features(sent) for sent in result_test]        # множество признаков
+        print('X_test is formed')
         #y_test = [feat_extr.sent2labels(sent, None, True) for sent in result_test]      # классы - грам. значения грам. категорий
         pos_model = self.load_model('pos.pickle')
+        print('Pos model is downloaded.')
         pos_pred = self.clfr_pos.predict(pos_model, X_test)      # определение постэгов слов в тестовой выборке
+        print('Postags are predicted.')
         X_test_new = self.feat_extr.add_pos_features(X_test, pos_pred)    # добавление полученных постэгов в качестве признаков для моделей, 
                                                                           # распознающих грам. категории
+        print('Postags are added to X_test.')
         pred_categories = {}
         for category in self.categories:     # определение грамматических категорий
             #y_test = [feat_extr.sent2labels(sent, category) for sent in result_test]
             gc_model = self.load_model('{}.pickle'.format(category))
             gc_pred = self.clfr_gc.predict(gc_model, X_test_new)
             pred_categories.update({category: gc_pred})   # словарь со всеми полученными грам. значениями
+            print('{} is predicted.'.format(category))
         return result_test, pos_pred, pred_categories
             
     def add_tags(self, result_test, pos_pred, pred_categories, labeled = True):
@@ -366,10 +372,11 @@ class Train_Predict():
                         word['feats'].update({category: sent_gc_labels[cat_i][word_i]})
         return result_test
         
-    def writing(self, results):
+    def writing(self, results, filename):
         '''
         Запись в файл полученных результатов.
         '''
+        print ('Writing of ', filename, ' is started')
         with open('results.txt', 'w', encoding='utf-8') as result:
             for sent in results:
                 for word in sent:
@@ -384,13 +391,20 @@ class Train_Predict():
                     else:
                         result.write('_\n')
                 result.write('\n')
+        print('Writing of ', filename, ' is finished')
                 
 if __name__ == '__main__':
     analyzer = Train_Predict()
-    analyzer.train_models('GIKRYA_train.conllu')
-    result_test, pos_pred, pred_categories = analyzer.prediction('GIKRYA_test.conllu')
-    results = analyzer.add_tags(result_test, pos_pred, pred_categories)
-    analyzer.writing(results)    
+    analyzer.train_models('unamb_sent_14_6.conllu')
+    result_test, pos_pred, pred_categories = analyzer.prediction('VK.txt', False)
+    results = analyzer.add_tags(result_test, pos_pred, pred_categories, False)
+    analyzer.writing(results, 'results_vk.txt')
+    result_test, pos_pred, pred_categories = analyzer.prediction('Lenta.txt', False)
+    results = analyzer.add_tags(result_test, pos_pred, pred_categories, False)
+    analyzer.writing(results, 'results_lenta.txt')  
+    result_test, pos_pred, pred_categories = analyzer.prediction('JZ.txt', False)
+    results = analyzer.add_tags(result_test, pos_pred, pred_categories, False)
+    analyzer.writing(results, 'results_jz.txt')    
     
     
     
