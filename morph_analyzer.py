@@ -1,32 +1,32 @@
 # -*- coding: utf-8 -*-
 from conllu.parser import parse
 from nltk.util import ngrams
-import pprint as pp
 import sklearn_crfsuite
-from sklearn_crfsuite import metrics
 import _pickle as pickle
 from collections import OrderedDict
 
 class FeatureExtr():
     '''
-    Класс для извлечения признаков слов.
+    Класс для извлечения признаков.
     '''
     def __init__(self, features = []):
         self.features = features    
 
-    def download(self, filename):
+    def load_conllu(self, filename):
         '''
         Загрузка файла в формате conllu и его парсинг.
+        Для парсинга файлов с менее чем 10 колонками использовался этот парсер:
+        https://github.com/svetlana21/conllu
         '''
         with open(filename, 'r', encoding='utf-8') as f:
             data = f.read()
         result = parse(data)
         return result    
         
-    def download_non_labeled(self, filename):
+    def load_non_labeled(self, filename):
         '''
         Загрузка неразмеченной выборки. 
-        Преобразование в формат, аналогичный расперсенному conllu: списки словарей с ключами 'id' и 'form'.
+        Преобразование в формат, аналогичный распарсенному conllu: списки словарей с ключами 'id' и 'form'.
         '''
         with open(filename, 'r', encoding='utf-8') as f:
             data = f.read()
@@ -38,7 +38,7 @@ class FeatureExtr():
         ordered = [[OrderedDict(zip(['id','form'], word)) for word in sent] for sent in result_list]
         return ordered
     
-    def download_list(self, filename):
+    def load_list(self, filename):
         '''
         Загрузка списков из файлов (список грамматических категорий, конечные списки некоторых частей речи).
         '''
@@ -257,9 +257,6 @@ class Classifier():
         
     def predict(self, model, X_test):
         y_pred = model.predict(X_test)
-#        labels = list(self.crf.classes_)
-#        labels.remove('O')    
-        #print(metrics.flat_classification_report(y_test, y_pred, digits=3)) # убрать y_test
         return y_pred
         
     def pickle_model(self, name):
@@ -277,13 +274,13 @@ class Train_Predict():
         self.feat_extr = FeatureExtr()   # объект для извлечения признаков
         self.clfr_pos = Classifier()     # классификатор для частей речи
         self.clfr_gc = Classifier()      # классификатор для грам. категорий
-        self.categories = self.feat_extr.download_list('categories.txt')      # список грам. категорий
+        self.categories = self.feat_extr.load_list('categories.txt')      # список грам. категорий
 
     def train_models(self, X_train_file):
         '''
         Обучение.
         '''
-        result_train = self.feat_extr.download(X_train_file)   # обучающая выборка  
+        result_train = self.feat_extr.load_conllu(X_train_file)   # обучающая выборка  
         X_train = [self.feat_extr.sent2features(sent) for sent in result_train]      # множество признаков (без постэгов)
         y_train = [self.feat_extr.sent2labels(sent, None, True) for sent in result_train]    # классы - части речи
         self.clfr_pos.training(X_train, y_train)     # обучение модели для частей речи и её сохранение
@@ -307,15 +304,14 @@ class Train_Predict():
         Определение тегов на тестовой выборке.
         '''
         if labeled is True:
-            result_test = self.feat_extr.download(X_test_file)     # размеченная тестовая выборка
+            result_test = self.feat_extr.load_conllu(X_test_file)     # размеченная тестовая выборка
         else:
-            result_test = self.feat_extr.download_non_labeled(X_test_file)     # неразмеченная тестовая выборка
-        print(X_test_file, ' is downloaded.')
+            result_test = self.feat_extr.load_non_labeled(X_test_file)     # неразмеченная тестовая выборка
+        print(X_test_file, ' is loaded.')
         X_test = [self.feat_extr.sent2features(sent) for sent in result_test]        # множество признаков
-        print('X_test is formed')
-        #y_test = [feat_extr.sent2labels(sent, None, True) for sent in result_test]      # классы - грам. значения грам. категорий
+        print('X_test is formed.')
         pos_model = self.load_model('pos.pickle')
-        print('Pos model is downloaded.')
+        print('Pos model is loaded.')
         pos_pred = self.clfr_pos.predict(pos_model, X_test)      # определение постэгов слов в тестовой выборке
         print('Postags are predicted.')
         X_test_new = self.feat_extr.add_pos_features(X_test, pos_pred)    # добавление полученных постэгов в качестве признаков для моделей, 
@@ -323,8 +319,8 @@ class Train_Predict():
         print('Postags are added to X_test.')
         pred_categories = {}
         for category in self.categories:     # определение грамматических категорий
-            #y_test = [feat_extr.sent2labels(sent, category) for sent in result_test]
             gc_model = self.load_model('{}.pickle'.format(category))
+            print('{} model is loaded.'.format(category))
             gc_pred = self.clfr_gc.predict(gc_model, X_test_new)
             pred_categories.update({category: gc_pred})   # словарь со всеми полученными грам. значениями
             print('{} is predicted.'.format(category))
@@ -336,12 +332,12 @@ class Train_Predict():
         вставка предсказанных тегов на их место в словарь, полученный после парсинга тестовой выборки.
         Если выборка изначально была размечена, ключи 'upostag' и 'feats' удаляются, затем снова добавляются с новыми значениями.
         '''
-        adp =  self.feat_extr.download_list('ADP.txt')   # загрузка конечных списков некоторых частей речи 
-        conj = self.feat_extr.download_list('CONJ.txt')
-        det = self.feat_extr.download_list('DET.txt')
-        h =  self.feat_extr.download_list('H.txt')
-        part =  self.feat_extr.download_list('PART.txt')
-        pron = self.feat_extr.download_list('PRON.txt')
+        adp =  self.feat_extr.load_list('ADP.txt')   # загрузка конечных списков некоторых частей речи 
+        conj = self.feat_extr.load_list('CONJ.txt')
+        det = self.feat_extr.load_list('DET.txt')
+        h =  self.feat_extr.load_list('H.txt')
+        part =  self.feat_extr.load_list('PART.txt')
+        pron = self.feat_extr.load_list('PRON.txt')
     
         for sent_i, sent in enumerate(result_test):    # замена тегов из исходной тестовой выборки на предсказанные
             sent_pos_labels = pos_pred.pop(0)       # частеречные теги для одного предложения
